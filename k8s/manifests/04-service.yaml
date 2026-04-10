@@ -1,0 +1,54 @@
+# ── Kubernetes Concepts: Service ─────────────────────────────────────────────
+#
+# A Service gives a stable DNS name + virtual IP to a set of Pods.
+# Without it, Pods have ephemeral IPs that change on restart.
+#
+# Service types:
+#   ClusterIP    — internal only; reachable within the cluster (default)
+#   NodePort     — opens a port on every Node; reachable from outside the cluster
+#   LoadBalancer — provisions a cloud load balancer (AWS ELB, GCP LB, etc.)
+#   ExternalName — maps to an external DNS name
+#
+# How it works (kube-proxy + iptables/IPVS):
+#   1. Service gets a stable ClusterIP (virtual IP)
+#   2. kube-proxy programs iptables rules on every Node
+#   3. Traffic to ClusterIP is DNAT'd to a randomly-selected healthy Pod IP
+#   4. The Pod's readiness probe controls whether it's in the rotation
+#
+# DNS: other Pods reach this Service at:
+#   summarisation-service.summarisation.svc.cluster.local:8080
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: summarisation-service
+  namespace: summarisation
+  labels:
+    app: summarisation-api
+spec:
+  type: ClusterIP   # internal only — Ingress handles external exposure
+  selector:
+    app: summarisation-api   # routes to Pods with this label
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080           # Service port
+      targetPort: http     # Pod port (named "http" in Deployment)
+
+---
+# ── NGINX reverse proxy Service ───────────────────────────────────────────────
+# This is the only externally-exposed service (NodePort for Docker Desktop)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: summarisation
+spec:
+  type: NodePort    # exposes on every Node at a static port (30000-32767)
+  selector:
+    app: nginx-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 30080   # access via http://localhost:30080 in Docker Desktop

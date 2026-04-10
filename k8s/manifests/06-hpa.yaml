@@ -1,0 +1,77 @@
+# ── Kubernetes Concepts: HorizontalPodAutoscaler (HPA) ───────────────────────
+#
+# HPA automatically scales the number of Pod replicas based on observed metrics.
+#
+# How it works:
+#   1. Metrics Server (or Prometheus Adapter) reports CPU/memory/custom metrics
+#   2. HPA controller polls metrics every 15s (default)
+#   3. If metric > target: scale UP  (add Pods)
+#   4. If metric < target: scale DOWN (after stabilizationWindowSeconds)
+#
+# Scale-up formula:
+#   desiredReplicas = ceil(currentReplicas × (currentMetric / targetMetric))
+#
+# Example:
+#   3 Pods, CPU at 80% average, target = 50%
+#   → ceil(3 × 80/50) = ceil(4.8) = 5 Pods
+#
+# Prerequisites for CPU/Memory HPA:
+#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#
+# Prerequisites for custom metrics (Prometheus):
+#   helm install prometheus-adapter prometheus-community/prometheus-adapter
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: summarisation-hpa
+  namespace: summarisation
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: summarisation-api
+
+  minReplicas: 2    # always keep at least 2 for HA
+  maxReplicas: 10   # never scale beyond 10
+
+  metrics:
+    # ── Built-in metric: CPU ──────────────────────────────────────────────
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type:               AverageUtilization
+          averageUtilization: 60   # scale up when avg CPU > 60% of request
+
+    # ── Built-in metric: Memory ───────────────────────────────────────────
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type:              AverageValue
+          averageValue:      "3Gi"   # scale up when avg memory > 3 GiB
+
+    # ── Custom metric from Prometheus (requires prometheus-adapter) ────────
+    # Uncomment after setting up Prometheus Adapter:
+    # - type: Pods
+    #   pods:
+    #     metric:
+    #       name: summarise_requests_per_second
+    #     target:
+    #       type:         AverageValue
+    #       averageValue: "10"   # scale up when > 10 req/s per Pod
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0     # scale up immediately (no wait)
+      policies:
+        - type:          Pods
+          value:         2              # add at most 2 Pods per scaling event
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300   # wait 5 min before scaling down
+      policies:
+        - type:          Pods
+          value:         1              # remove at most 1 Pod per scaling event
+          periodSeconds: 60

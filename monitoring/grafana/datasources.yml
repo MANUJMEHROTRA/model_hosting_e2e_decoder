@@ -1,0 +1,14 @@
+# Grafana datasource provisioning — auto-connects Grafana to Prometheus on startup
+
+apiVersion: 1
+
+datasources:
+  - name:      Prometheus
+    type:      prometheus
+    access:    proxy
+    url:       http://prometheus:9090   # docker-compose service name
+    isDefault: true
+    editable:  true
+    jsonData:
+      timeInterval: "5s"
+      queryTimeout: "60s"

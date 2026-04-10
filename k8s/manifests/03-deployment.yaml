@@ -1,0 +1,139 @@
+# ── Kubernetes Concepts: Deployment ──────────────────────────────────────────
+#
+# A Deployment manages a ReplicaSet, which manages Pods.
+# Hierarchy: Deployment → ReplicaSet → Pod → Container
+#
+# KEY CONCEPTS:
+#
+# replicas: 3
+#   Kubernetes runs 3 identical Pod copies. If one crashes, it restarts automatically.
+#   The Scheduler places Pods across Nodes to avoid single-point-of-failure.
+#
+# strategy: RollingUpdate
+#   During updates, Kubernetes brings up new Pods before killing old ones.
+#   maxSurge: 1    → at most 1 extra Pod during rollout
+#   maxUnavailable: 0 → zero downtime (at least replicas=3 always available)
+#
+# resources.requests
+#   What Kubernetes *guarantees* the Pod will have. Used by the Scheduler
+#   to decide which Node to place the Pod on.
+#
+# resources.limits
+#   The hard ceiling. If the container exceeds this, it's OOM-killed (memory)
+#   or throttled (CPU).
+#
+# livenessProbe
+#   "Is this container alive?" → if it fails N times, Kubernetes RESTARTS the Pod.
+#   Use for detecting infinite loops, deadlocks.
+#
+# readinessProbe
+#   "Is this container ready for traffic?" → if it fails, the Pod is removed from
+#   the Service load balancer (but NOT restarted). Use for startup delay.
+#
+# volumeMounts / volumes
+#   Model weights are large. We mount them from a PersistentVolume or
+#   hostPath (Docker Desktop) rather than baking them into the image.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: summarisation-api
+  namespace: summarisation
+  labels:
+    app: summarisation-api
+    version: "1.0"
+spec:
+  replicas: 3   # 3 Pods for high availability + load distribution
+
+  selector:
+    matchLabels:
+      app: summarisation-api
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge:        1   # bring up 1 new Pod before killing old
+      maxUnavailable:  0   # never have fewer than `replicas` Pods available
+
+  template:   # Pod template — every Pod looks like this
+    metadata:
+      labels:
+        app: summarisation-api
+      annotations:
+        # Tell Prometheus to scrape this Pod
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8080"
+        prometheus.io/path:   "/metrics"
+
+    spec:
+      # Security: don't run as root
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: api
+          image: summarisation-api:latest
+          imagePullPolicy: Never   # use local image (Docker Desktop)
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          # Load config from ConfigMap as environment variables
+          envFrom:
+            - configMapRef:
+                name: summarisation-config
+
+          resources:
+            requests:
+              cpu:    "500m"    # 0.5 CPU core guaranteed
+              memory: "2Gi"     # 2 GB RAM guaranteed
+            limits:
+              cpu:    "2000m"   # max 2 CPU cores
+              memory: "4Gi"     # max 4 GB RAM
+
+          # Liveness probe: restart if /health fails 3 times
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60    # give model time to load
+            periodSeconds:       15
+            failureThreshold:    3
+
+          # Readiness probe: remove from load balancer if /ready fails
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds:       10
+            failureThreshold:    3
+
+          # Mount model weights
+          volumeMounts:
+            - name: model-weights
+              mountPath: /app/models
+              readOnly: true
+
+      volumes:
+        - name: model-weights
+          # For Docker Desktop: use hostPath to mount from your Mac
+          hostPath:
+            path: /path/to/your/models    # ← update to absolute path on your machine
+            type: Directory
+          # In production: use PersistentVolumeClaim (PVC) backed by NFS/EFS/GCS
+
+      # Pod anti-affinity: spread Pods across different Nodes
+      # (prevents all 3 replicas landing on the same Node)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: summarisation-api
+                topologyKey: kubernetes.io/hostname

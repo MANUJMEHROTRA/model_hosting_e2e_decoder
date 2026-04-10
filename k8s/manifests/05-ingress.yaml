@@ -1,0 +1,79 @@
+# ── Kubernetes Concepts: Ingress + Ingress Controller ────────────────────────
+#
+# Ingress is an API object that defines HTTP routing rules.
+# It does NOT handle traffic itself — it needs an Ingress Controller (e.g. NGINX).
+#
+# Architecture:
+#
+#   Browser / curl
+#       ↓
+#   [Ingress Controller Pod]   ← actual proxy (NGINX/Traefik/Envoy)
+#       ↓  reads Ingress rules
+#   [summarisation-service]    ← ClusterIP Service
+#       ↓  load balances
+#   [Pod 1]  [Pod 2]  [Pod 3]  ← your API replicas
+#
+# Ingress features:
+#   - Path-based routing (/api → backend-a, /admin → backend-b)
+#   - Host-based routing (api.example.com vs docs.example.com)
+#   - TLS termination (HTTPS at the ingress, HTTP internally)
+#   - Rewrite rules, rate limiting (via annotations)
+#
+# For Docker Desktop: install NGINX Ingress Controller first:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.2/deploy/static/provider/cloud/deploy.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: summarisation-ingress
+  namespace: summarisation
+  annotations:
+    # NGINX Ingress Controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target:          /
+    nginx.ingress.kubernetes.io/proxy-read-timeout:      "300"
+    nginx.ingress.kubernetes.io/proxy-body-size:         "10m"
+    nginx.ingress.kubernetes.io/limit-rps:               "20"     # rate limit per IP
+    nginx.ingress.kubernetes.io/enable-cors:             "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin:       "*"
+    # Load balancing algorithm (round-robin by default)
+    nginx.ingress.kubernetes.io/load-balance:            "ewma"   # exponential weighted moving average
+spec:
+  ingressClassName: nginx
+
+  # TLS (uncomment for HTTPS + cert-manager)
+  # tls:
+  #   - hosts: [api.your-domain.com]
+  #     secretName: summarisation-tls
+
+  rules:
+    - host: localhost   # Docker Desktop: access at http://localhost
+      http:
+        paths:
+          - path: /summarise
+            pathType: Prefix
+            backend:
+              service:
+                name: summarisation-service
+                port:
+                  number: 8080
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: summarisation-service
+                port:
+                  number: 8080
+          - path: /ready
+            pathType: Exact
+            backend:
+              service:
+                name: summarisation-service
+                port:
+                  number: 8080
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: summarisation-service
+                port:
+                  number: 8080

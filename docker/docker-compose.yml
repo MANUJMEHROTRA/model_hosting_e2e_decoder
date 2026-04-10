@@ -1,0 +1,99 @@
+# docker-compose.yml — local development stack
+#
+# Services:
+#   api         — FastAPI summarisation service (3 replicas simulated)
+#   nginx       — reverse proxy / load balancer (routes to api replicas)
+#   prometheus  — metrics scraper
+#   grafana     — dashboard visualisation
+#
+# Start all:  docker compose up --build
+# API docs:   http://localhost:80/docs
+# Grafana:    http://localhost:3000  (admin/admin)
+# Prometheus: http://localhost:9090
+
+version: "3.9"
+
+networks:
+  backend:   # internal network — api ↔ prometheus
+  frontend:  # exposed network  — nginx ↔ world
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+services:
+
+  # ── FastAPI model service ──────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: summarisation-api:latest
+    environment:
+      MODEL_PATH: /app/models/lora_merged
+      PORT: "8080"
+      WORKERS: "1"
+    volumes:
+      - ../models:/app/models:ro   # mount model weights read-only
+    networks:
+      - backend
+    deploy:
+      replicas: 3                  # 3 replicas for load balancing demo
+      resources:
+        limits:
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── NGINX reverse proxy ────────────────────────────────────────────────
+  # NGINX sits in front of the 3 api replicas.
+  # Requests to :80 are round-robin distributed across api:8080.
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    networks:
+      - frontend
+      - backend
+
+  # ── Prometheus ─────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"    # allow config reload via HTTP
+    networks:
+      - backend
+
+  # ── Grafana ────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - backend
+      - frontend

@@ -1,0 +1,52 @@
+# ── Kubernetes Concepts: ConfigMap ───────────────────────────────────────────
+#
+# ConfigMap stores non-sensitive configuration as key-value pairs.
+# Pods consume ConfigMaps as:
+#   - Environment variables  (envFrom / env[].valueFrom.configMapKeyRef)
+#   - Volume-mounted files   (good for config files like nginx.conf)
+#
+# For sensitive data (passwords, API keys) use Secret instead.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: summarisation-config
+  namespace: summarisation
+data:
+  MODEL_PATH:   "/app/models/lora_merged"
+  PORT:         "8080"
+  WORKERS:      "1"
+  LOG_LEVEL:    "info"
+
+---
+# ConfigMap for NGINX configuration (mounted as a file)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: summarisation
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events { worker_connections 1024; }
+    http {
+      upstream summarise_backend {
+        least_conn;
+        server summarisation-service:8080;
+        keepalive 32;
+      }
+      server {
+        listen 80;
+        location / {
+          proxy_pass http://summarise_backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_read_timeout 300s;
+        }
+        location /metrics {
+          allow 10.0.0.0/8;
+          deny all;
+          proxy_pass http://summarise_backend;
+        }
+      }
+    }

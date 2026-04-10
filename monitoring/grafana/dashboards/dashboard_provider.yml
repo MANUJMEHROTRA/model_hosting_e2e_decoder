@@ -1,0 +1,8 @@
+# Grafana dashboard provider — auto-loads JSON dashboards from the directory
+apiVersion: 1
+providers:
+  - name: summarisation
+    folder: Summarisation
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards

@@ -1,0 +1,37 @@
+# ── Core ML ───────────────────────────────────────────────────────────────────
+torch>=2.4.0
+transformers>=4.45.0
+datasets>=2.20.0
+peft>=0.13.0           # LoRA, DoRA, LoRA+ etc.
+accelerate>=0.34.0     # multi-GPU, mixed precision
+
+# ── Training utilities ────────────────────────────────────────────────────────
+sentencepiece>=0.2.0
+rouge-score>=0.1.2
+pandas>=2.2.0
+numpy>=1.26.0
+
+# ── Quantization ─────────────────────────────────────────────────────────────
+bitsandbytes>=0.43.0         # BNB INT8/INT4 (CUDA only)
+optimum[onnxruntime]>=1.22.0 # ONNX export + optimisation
+onnx>=1.16.0
+onnxruntime>=1.19.0
+# autoawq                    # AWQ (install separately: pip install autoawq)
+# gguf                       # GGUF write/read
+
+# ── Inference servers ─────────────────────────────────────────────────────────
+# vllm                       # install separately: pip install vllm (CUDA only)
+# sglang[all]                # install separately: pip install sglang[all]
+openai>=1.50.0               # OpenAI-compatible client for vLLM/SGLang
+
+# ── API & serving ─────────────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.9.0
+prometheus-client>=0.21.0
+httpx>=0.27.0                # async HTTP client for testing
+
+# ── Notebooks ─────────────────────────────────────────────────────────────────
+jupyter>=1.1.0
+ipywidgets>=8.1.0
+matplotlib>=3.9.0

@@ -1,0 +1,18 @@
+# ── Kubernetes Concepts: Namespace ───────────────────────────────────────────
+#
+# A Namespace is a virtual cluster inside your physical cluster.
+# It provides:
+#   - Resource isolation (dev vs prod in the same cluster)
+#   - RBAC scope (permissions per namespace)
+#   - Resource quotas (limit CPU/memory per namespace)
+#   - Network policies (control which namespaces can talk to each other)
+#
+# kubectl apply -f 01-namespace.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: summarisation
+  labels:
+    app.kubernetes.io/name: summarisation
+    env: production
